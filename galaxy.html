@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Cosmic Dodge</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap');
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #0a0a1a; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+            font-family: 'Orbitron', sans-serif;
+        }
+        canvas { 
+            border: 3px solid #1e90ff; 
+            box-shadow: 0 0 20px rgba(30, 144, 255, 0.5);
+        }
+        #startScreen, #pauseScreen {
+            position: absolute;
+            color: white;
+            text-align: center;
+            background: rgba(0,0,0,0.7);
+            padding: 30px;
+            border-radius: 15px;
+            z-index: 10;
+        }
+        #scoreDisplay {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #1e90ff;
+            font-size: 24px;
+            text-shadow: 0 0 10px rgba(30, 144, 255, 0.5);
+            z-index: 5;
+        }
+        #levelDisplay {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: #1e90ff;
+            font-size: 24px;
+            text-shadow: 0 0 10px rgba(30, 144, 255, 0.5);
+            z-index: 5;
+        }
+        #pauseScreen {
+            display: none;
+        }
+        button {
+            background-color: #1e90ff;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 5px;
+            font-family: 'Orbitron', sans-serif;
+            transition: all 0.3s ease;
+        }
+        button:hover {
+            background-color: #4169e1;
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body>
+    <div id="startScreen">
+        <h1 style="color: #1e90ff;">Cosmic Dodge</h1>
+        <p>Survive the asteroid storm!</p>
+        <p>Controls: Arrow Keys / ESC to Pause</p>
+        <button onclick="startGame()">Launch Mission</button>
+    </div>
+    <div id="pauseScreen">
+        <h1 style="color: #1e90ff;">Game Paused</h1>
+        <p>Press ESC to continue</p>
+        <button onclick="resumeGame()">Resume</button>
+        <button onclick="restartGame()">Restart</button>
+    </div>
+    <div id="scoreDisplay">Score: 0</div>
+    <div id="levelDisplay">Level: 1</div>
+    <canvas id="gameCanvas" width="1000" height="700"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const startScreen = document.getElementById('startScreen');
+        const pauseScreen = document.getElementById('pauseScreen');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const levelDisplay = document.getElementById('levelDisplay');
+
+        let player, asteroids, powerUps, gameActive, gamePaused, score, level, difficulty;
+        const starfield = [];
+        const keys = {};
+
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.radius = Math.random() * 2;
+                this.speedX = (Math.random() - 0.5) * 4;
+                this.speedY = Math.random() * 3 + 1;
+                this.opacity = 1;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.globalAlpha = this.opacity;
+                ctx.fillStyle = this.color;
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+            }
+
+            update() {
+                this.x += this.speedX;
+                this.y += this.speedY;
+                this.opacity -= 0.02;
+            }
+        }
+
+        function initStarfield() {
+            starfield.length = 0;
+            for (let i = 0; i < 200; i++) {
+                starfield.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    radius: Math.random() * 1.5,
+                    speed: Math.random() * 0.5
+                });
+            }
+        }
+
+        function drawStarfield() {
+            ctx.fillStyle = 'white';
+            starfield.forEach(star => {
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
+                ctx.fill();
+                star.y += star.speed;
+                if (star.y > canvas.height) {
+                    star.y = 0;
+                    star.x = Math.random() * canvas.width;
+                }
+            });
+        }
+
+        function initGame() {
+            player = {
+                x: canvas.width / 2,
+                y: canvas.height - 100,
+                width: 40,
+                height: 60,
+                speed: 5,
+                color: '#1e90ff',
+                shield: 3,
+                particles: []
+            };
+
+            asteroids = [];
+            powerUps = [];
+            gameActive = false;
+            gamePaused = false;
+            score = 0;
+            level = 1;
+            difficulty = 1;
+            initStarfield();
+        }
+
+        function drawPlayer() {
+            ctx.save();
+            ctx.translate(player.x, player.y);
+            
+            // Main body
+            ctx.fillStyle = player.color;
+            ctx.beginPath();
+            ctx.moveTo(0, -30);  // Nose
+            ctx.lineTo(-20, 30); // Left wing
+            ctx.lineTo(20, 30);  // Right wing
+            ctx.closePath();
+            ctx.fill();
+
+            // Cockpit
+            ctx.fillStyle = 'rgba(255,255,255,0.7)';
+            ctx.beginPath();
+            ctx.arc(0, 0, 10, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Engine glow
+            ctx.fillStyle = 'rgba(255,165,0,0.5)';
+            ctx.beginPath();
+            ctx.moveTo(-15, 30);
+            ctx.lineTo(0, 50);
+            ctx.lineTo(15, 30);
+            ctx.closePath();
+            ctx.fill();
+
+            // Shield indicator
+            for (let i = 0; i < player.shield; i++) {
+                ctx.strokeStyle = `rgba(30, 144, 255, ${0.3 - i * 0.1})`;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(0, 0, 30 - i*10, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            ctx.restore();
+        }
+
+        function createAsteroid() {
+            const asteroidTypes = [
+                { shape: 'rock', color: '#8B4513' },
+                { shape: 'spiky', color: '#2F4F4F' },
+                { shape: 'irregular', color: '#696969' }
+            ];
+            const type = asteroidTypes[Math.floor(Math.random() * asteroidTypes.length)];
+            const size = Math.random() * 40 + 20;
+            const asteroid = {
+                x: Math.random() * (canvas.width - size),
+                y: -size,
+                width: size,
+                height: size,
+                speed: Math.random() * (3 + difficulty/2) + 2,
+                rotationSpeed: (Math.random() - 0.5) * 0.2,
+                angle: 0,
+                color: type.color,
+                shape: type.shape
+            };
+            asteroids.push(asteroid);
+        }
+
+        function drawAsteroids() {
+            asteroids.forEach(asteroid => {
+                ctx.save();
+                ctx.translate(asteroid.x + asteroid.width/2, asteroid.y + asteroid.height/2);
+                ctx.rotate(asteroid.angle);
+                
+                ctx.fillStyle = asteroid.color;
+                
+                // Different asteroid shapes
+                ctx.beginPath();
+                switch(asteroid.shape) {
+                    case 'rock':
+                        ctx.moveTo(0, -asteroid.width/2);
+                        ctx.lineTo(asteroid.width/2, 0);
+                        ctx.lineTo(0, asteroid.width/2);
+                        ctx.lineTo(-asteroid.width/2, 0);
+                        break;
+                    case 'spiky':
+                        for(let i = 0; i < 6; i++) {
+                            const angle = (i / 6) * Math.PI * 2;
+                            const radius = asteroid.width/2 * (Math.random() * 0.5 + 0.75);
+                            const x = Math.cos(angle) * radius;
+                            const y = Math.sin(angle) * radius;
+                            if (i === 0) ctx.moveTo(x, y);
+                            else ctx.lineTo(x, y);
+                        }
+                        break;
+                    default: // irregular
+                        ctx.arc(0, 0, asteroid.width/2, 0, Math.PI * 2);
+                }
+                
+                ctx.closePath();
+                ctx.fill();
+                
+                ctx.restore();
+                
+                asteroid.angle += asteroid.rotationSpeed;
+            });
+        }
+
+        function createPowerUp() {
+            const types = ['shield', 'speed', 'points'];
+            const powerUp = {
+                x: Math.random() * (canvas.width - 30),
+                y: -30,
+                width: 30,
+                height: 30,
+                speed: 2,
+                type: types[Math.floor(Math.random() * types.length)]
+            };
+            powerUps.push(powerUp);
+        }
+
+        function drawPowerUps() {
+            powerUps.forEach(powerUp => {
+                ctx.fillStyle = powerUp.type === 'shield' ? 'green' : 
+                               powerUp.type === 'speed' ? 'yellow' : 'purple';
+                ctx.beginPath();
+                ctx.moveTo(powerUp.x + powerUp.width/2, powerUp.y);
+                ctx.lineTo(powerUp.x, powerUp.y + powerUp.height);
+                ctx.lineTo(powerUp.x + powerUp.width, powerUp.y + powerUp.height);
+                ctx.closePath();
+                ctx.fill();
+            });
+        }
+
+        function movePlayer() {
+            if (keys.ArrowLeft && player.x > 0) {
+                player.x -= player.speed;
+            }
+            if (keys.ArrowRight && player.x < canvas.width - player.width) {
+                player.x += player.speed;
+            }
+            if (keys.ArrowUp && player.y > canvas.height / 2) {
+                player.y -= player.speed;
+            }
+            if (keys.ArrowDown && player.y < canvas.height - player.height) {
+                player.y += player.speed;
+            }
+        }
+
+        function moveAsteroids() {
+            asteroids.forEach((asteroid, index) => {
+                asteroid.y += asteroid.speed;
+
+                if (asteroid.y > canvas.height) {
+                    asteroids.splice(index, 1);
+                    score++;
+                    scoreDisplay.textContent = `Score: ${score}`;
+
+                    // Level up mechanism
+                    if (score % 20 === 0) {
+                        level++;
+                        difficulty += 0.5;
+                        levelDisplay.textContent = `Level: ${level}`;
+                    }
+                }
+            });
+        }
+
+        function movePowerUps() {
+            powerUps.forEach((powerUp, index) => {
+                powerUp.y += powerUp.speed;
+
+                if (powerUp.y > canvas.height) {
+                    powerUps.splice(index, 1);
+                }
+            });
+        }
+
+        function checkCollisions() {
+            // Asteroid collisions
+            asteroids.forEach((asteroid, index) => {
+                if (
+                    player.x - 20 < asteroid.x + asteroid.width &&
+                    player.x + 20 > asteroid.x &&
+                    player.y - 30 < asteroid.y + asteroid.height &&
+                    player.y + 30 > asteroid.y
+                ) {
+                    player.shield--;
+                    asteroids.splice(index, 1);
+
+                    // Create explosion particles
+                    for (let i = 0; i < 20; i++) {
+                        player.particles.push(new Particle(
+                            asteroid.x + asteroid.width/2, 
+                            asteroid.y + asteroid.height/2, 
+                            asteroid.color
+                        ));
+                    }
+
+                    if (player.shield <= 0) {
+                        gameOver();
+                    }
+                }
+            });
+
+            // Power-up collisions
+            powerUps.forEach((powerUp, index) => {
+                if (
+                    player.x - 20 < powerUp.x + powerUp.width &&
+                    player.x + 20 > powerUp.x &&
+                    player.y - 30 < powerUp.y + powerUp.height &&
+                    player.y + 30 > powerUp.y
+                ) {
+                    switch(powerUp.type) {
+                        case 'shield':
+                            player.shield = Math.min(player.shield + 1, 3);
+                            break;
+                        case 'speed':
+                            level++;
+                            levelDisplay.textContent = `Level: ${level}`;
+                            break;
+                        case 'points':
+                            score += 5;
+                            scoreDisplay.textContent = `Score: ${score}`;
+                            break;
+                    }
+                    powerUps.splice(index, 1);
+                }
+            });
+        }
+
+        function gameLoop() {
+            if (!gameActive || gamePaused) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw starfield background
+            drawStarfield();
+
+            // Player movement
+            movePlayer();
+
+            // Spawn mechanics
+            if (Math.random() < 0.02) createAsteroid();
+            if (Math.random() < 0.005) createPowerUp();
+
+            moveAsteroids();
+            movePowerUps();
+            drawAsteroids();
+            drawPowerUps();
+            drawPlayer();
+
+            // Update and draw particles
+            player.particles.forEach((particle, index) => {
+                particle.draw();
+                particle.update();
+                if (particle.opacity <= 0) {
+                    player.particles.splice(index, 1);
+                }
+            });
+
+            checkCollisions();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function startGame() {
+            initGame();
+            startScreen.style.display = 'none';
+            pauseScreen.style.display = 'none';
+            gameActive = true;
+            gamePaused = false;
+            gameLoop();
+        }
+
+        function pauseGame() {
+            if (gameActive && !gamePaused) {
+                gamePaused = true;
+                pauseScreen.style.display = 'block';
+            }
+        }
+
+        function resumeGame() {
+            if (gameActive && gamePaused) {
+                gamePaused = false;
+                pauseScreen.style.display = 'none';
+                gameLoop();
+            }
+        }
+
+        function restartGame() {
+            initGame();
+            startScreen.style.display = 'none';
+            pauseScreen.style.display = 'none';
+            gameActive = true;
+            gamePaused = false;
+            gameLoop();
+        }
+
+        function gameOver() {
+            gameActive = false;
+            
+            startScreen.style.display = 'block';
+            startScreen.innerHTML = `
+                <h1 style="color: #1e90ff;">Mission Failed</h1>
+                <p>Your Final Score: ${score}</p>
+                <p>Highest Level: ${level}</p>
+                <button onclick="startGame()">Retry Mission</button>
+            `;
+            score=0;
+            level=0;    
+        }
+
+        // Keyboard event listeners
+        document.addEventListener('keydown', (e) => {
+            keys[e.code] = true;
+
+            // Pause functionality
+            if (e.code === 'Escape') {
+                if (!gameActive) return;
+                
+                if (gamePaused) {
+                    resumeGame();
+                } else {
+                    pauseGame();
+                }
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keys[e.code] = false;
+        });
+
+        // Initialize the game state
+        initGame();
+        </script>
+        </body>
+    </html>
